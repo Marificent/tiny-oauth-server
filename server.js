@@ -13,6 +13,7 @@ const app = express();
 app.use(cookieParser(process.env.COOKIE_SECRET || "dev-secret"));
 
 
+
 // Configurações básicas
 app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
@@ -151,6 +152,7 @@ app.get("/auth/error", (req, res) => {
 });
 
 
-app.listen(3000, () =>
-  console.log("Servidor no ar: http://localhost:3000")
-);
+app.listen(PORT, () => {
+  console.log(`Servidor no ar: porta ${PORT}`);
+});
+
