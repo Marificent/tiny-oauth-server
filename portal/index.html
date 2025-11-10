@@ -1,0 +1,321 @@
+# Repository layout (you can copy/paste)
+
+```
+/ (repo root)
+├─ api/                      # Your Tiny OAuth Server (Node)
+│  ├─ package.json           # must have "start" script
+│  ├─ src/...                # your existing code
+│  └─ (optional) Dockerfile  # not required for this blueprint
+├─ portal/                   # Public developer portal (static site)
+│  └─ index.html
+└─ render.yaml               # Render Blueprint: API + Postgres + Static Portal
+```
+```
+# api/package.json — example (adapt if you already have one)
+{
+  "name": "tiny-oauth-api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
+```
+
+---
+
+## render.yaml (Blueprint)
+
+> Commit this file at the repo root. On Render: **New → Blueprint** → select this repo.
+
+```yaml
+# render.yaml — Node API + Postgres (Free) + Static Portal (Free)
+databases:
+  - name: tinyoauth-db
+    databaseName: tinyoauth
+    plan: free
+
+services:
+  # === API (Node) ===
+  - type: web
+    name: tinyoauth-api
+    env: node
+    plan: free
+    rootDir: api
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tinyoauth-db
+          property: connectionString
+      - key: ISSUER_URL
+        value: "https://tinyoauth-api.onrender.com" # update after first deploy if needed
+      - key: TOKEN_TTL_SEC
+        value: "900"
+      - key: REFRESH_TTL_DAYS
+        value: "30"
+      - key: REQUIRE_PKCE_PUBLIC
+        value: "true"
+      - key: ALLOW_PUBLIC_CLIENTS
+        value: "true"
+      - key: JWKS_KID
+        value: "kid-1"
+      - key: JWT_PRIVATE_KEY_PEM
+        sync: false  # set this secret in the Render dashboard after creating the service
+
+  # === Static Developer Portal ===
+  - type: static
+    name: tinyoauth-portal
+    plan: free
+    rootDir: portal
+    buildCommand: ""
+    staticPublishPath: "."
+    autoDeploy: true
+```
+
+> Após o primeiro deploy, volte e ajuste **ISSUER_URL** para o domínio real que o Render gerar.
+
+---
+
+## portal/index.html — Developer Portal (MVP funcional)
+
+> Um site estático simples (HTML/JS/CSS) com doc básica e um gerador de URL de autorização + PKCE.
+
+```html
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tiny OAuth – Portal de Desenvolvedores</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; line-height: 1.5; }
+    header { margin-bottom: 24px; }
+    h1 { margin: 0 0 8px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);} 
+    input, select, textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; }
+    label { font-weight: 600; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btn { display: inline-block; padding: 10px 14px; border-radius: 10px; border: 1px solid #111827; background: #111827; color: #fff; text-decoration: none; cursor: pointer; }
+    code, pre { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+    pre { overflow: auto; padding: 10px; }
+    .muted { color: #6b7280; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Tiny OAuth – Portal de Desenvolvedores</h1>
+    <div class="muted">Guia rápido de integração • Ambiente: <span id="issuer-label" class="mono">(definir)</span></div>
+  </header>
+
+  <section class="card">
+    <h2>Endpoints</h2>
+    <p>Substitua <code>ISSUER</code> pelo domínio da sua API (Render):</p>
+    <ul>
+      <li>Discovery (OIDC): <code>ISSUER/.well-known/openid-configuration</code></li>
+      <li>JWKS: <code>ISSUER/.well-known/jwks.json</code></li>
+      <li>Authorize: <code>ISSUER/oauth/authorize</code></li>
+      <li>Token: <code>ISSUER/oauth/token</code></li>
+      <li>UserInfo (opcional): <code>ISSUER/userinfo</code></li>
+    </ul>
+    <div class="row">
+      <div>
+        <label for="issuer">Seu ISSUER (ex.: https://tinyoauth-api.onrender.com)</label>
+        <input id="issuer" placeholder="https://tinyoauth-api.onrender.com" />
+      </div>
+      <div>
+        <label for="jwks">JWKS (gerado pela API)</label>
+        <input id="jwks" placeholder="(preenchido automaticamente)" disabled />
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Fluxo Authorization Code + PKCE</h2>
+    <p>Use este gerador para montar a URL de autorização e testar o login/consent com PKCE.</p>
+    <div class="row">
+      <div>
+        <label for="client_id">client_id</label>
+        <input id="client_id" placeholder="cliente do parceiro" />
+      </div>
+      <div>
+        <label for="redirect_uri">redirect_uri</label>
+        <input id="redirect_uri" placeholder="https://app.parceiro.com/callback" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="scope">scope</label>
+        <input id="scope" placeholder="orders:read orders:write" />
+      </div>
+      <div>
+        <label for="state">state (opcional)</label>
+        <input id="state" placeholder="abc123" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="code_challenge_method">code_challenge_method</label>
+        <select id="code_challenge_method">
+          <option value="S256" selected>S256</option>
+        </select>
+      </div>
+      <div>
+        <label for="verifier">code_verifier (guardar para a troca)</label>
+        <input id="verifier" class="mono" placeholder="gerado abaixo" />
+      </div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px;">
+      <button class="btn" id="gen">Gerar URL de autorização</button>
+      <a class="btn" id="go" target="_blank" rel="nofollow noopener">Abrir autorização ▶</a>
+    </div>
+    <div style="margin-top:12px;">
+      <label>URL gerada</label>
+      <input id="auth_url" class="mono" />
+    </div>
+    <details style="margin-top:12px;">
+      <summary>Como trocar o código por token (cURL)</summary>
+      <pre class="mono" id="curl"></pre>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Client Credentials (máquina ↔ máquina)</h2>
+    <p>Exemplo de requisição para token sem usuário:</p>
+<pre class="mono">curl -X POST \ 
+  "$ISSUER/oauth/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=CLIENT_ID" \
+  -d "client_secret=CLIENT_SECRET" \
+  -d "scope=orders:read"
+</pre>
+  </section>
+
+  <section class="card">
+    <h2>Onboarding de Aplicativos</h2>
+    <p>No início, sugerimos intake manual via formulário. Campos recomendados:</p>
+    <ul>
+      <li>Nome do app + contato técnico</li>
+      <li>redirect_uris (produção e staging)</li>
+      <li>escopos solicitados (mínimo privilégio)</li>
+      <li>tipo de cliente (public/confidential)</li>
+    </ul>
+    <p class="muted">Depois você pode evoluir para um endpoint /admin/clients de auto-cadastro.</p>
+  </section>
+
+  <footer class="muted">© Tiny OAuth – Portal MVP</footer>
+
+  <script>
+    // Helpers: base64url, random string, sha256
+    function base64url(arrayBuffer){
+      let s = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      return s.replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+    function base64urlFromStr(str){
+      return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    }
+    function randomVerifier(len=64){
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+      let out='';
+      const array = new Uint32Array(len);
+      crypto.getRandomValues(array);
+      for(let i=0;i<len;i++){ out += chars[array[i] % chars.length]; }
+      return out;
+    }
+    async function sha256Buf(str){
+      const data = new TextEncoder().encode(str);
+      return await crypto.subtle.digest('SHA-256', data);
+    }
+
+    const issuer = document.getElementById('issuer');
+    const issuerLabel = document.getElementById('issuer-label');
+    const jwks = document.getElementById('jwks');
+    const clientId = document.getElementById('client_id');
+    const redirectUri = document.getElementById('redirect_uri');
+    const scope = document.getElementById('scope');
+    const state = document.getElementById('state');
+    const method = document.getElementById('code_challenge_method');
+    const verifier = document.getElementById('verifier');
+    const genBtn = document.getElementById('gen');
+    const goBtn = document.getElementById('go');
+    const authUrl = document.getElementById('auth_url');
+    const curl = document.getElementById('curl');
+
+    function updateDerived(){
+      issuerLabel.textContent = issuer.value || '(definir)';
+      jwks.value = issuer.value ? issuer.value.replace(/\/$/, '') + '/.well-known/jwks.json' : '';
+    }
+
+    issuer.addEventListener('input', updateDerived);
+    updateDerived();
+
+    genBtn.addEventListener('click', async () => {
+      const iss = (issuer.value || '').replace(/\/$/, '');
+      if(!iss){ alert('Defina o ISSUER (domínio da API no Render).'); return; }
+      const v = verifier.value || randomVerifier();
+      verifier.value = v;
+      const hash = await sha256Buf(v);
+      const challenge = base64url(hash);
+      const s = state.value || Math.random().toString(36).slice(2);
+      const url = new URL(iss + '/oauth/authorize');
+      url.searchParams.set('response_type','code');
+      url.searchParams.set('client_id', clientId.value || 'CLIENT_ID');
+      url.searchParams.set('redirect_uri', redirectUri.value || 'https://app.parceiro.com/callback');
+      url.searchParams.set('scope', scope.value || 'orders:read');
+      url.searchParams.set('state', s);
+      url.searchParams.set('code_challenge', challenge);
+      url.searchParams.set('code_challenge_method', method.value);
+
+      authUrl.value = url.toString();
+      goBtn.href = url.toString();
+
+      const tokenUrl = iss + '/oauth/token';
+      const curlCmd = `curl -X POST \\\n  "${tokenUrl}" \\\n  -H "Content-Type: application/x-www-form-urlencoded" \\\n  -d "grant_type=authorization_code" \\\n  -d "code=AUTH_CODE" \\\n  -d "redirect_uri=${redirectUri.value || 'https://app.parceiro.com/callback'}" \\\n  -d "client_id=${clientId.value || 'CLIENT_ID'}" \\\n  -d "code_verifier=${v}"`;
+      curl.textContent = curlCmd;
+    });
+  </script>
+</body>
+</html>
+```
+
+---
+
+## Variáveis de ambiente obrigatórias (configure no painel do Render)
+
+- `ISSUER_URL` → o domínio público da API (ex.: `https://tinyoauth-api.onrender.com`).
+- `DATABASE_URL` → injetada automaticamente pelo Render via `fromDatabase`.
+- `JWT_PRIVATE_KEY_PEM` → **cole sua chave privada PEM** (não commitar no Git).
+- `JWKS_KID` → identificador da chave (ex.: `kid-1`).
+- `TOKEN_TTL_SEC`, `REFRESH_TTL_DAYS`, `REQUIRE_PKCE_PUBLIC`, `ALLOW_PUBLIC_CLIENTS` → conforme política.
+
+> Importante: garanta que sua API exponha `/.well-known/openid-configuration` e `/.well-known/jwks.json`.
+
+---
+
+## Como publicar
+
+1) Faça commit de **tudo** acima no GitHub (inclusive `render.yaml`).
+2) No painel do Render: **New → Blueprint** → selecione o repositório.
+3) O Render criará: Postgres (Free), API (Free) e Portal (Free).
+4) Após o primeiro deploy, ajuste `ISSUER_URL` se o domínio final mudar.
+5) Teste o fluxo no Portal (gerador de PKCE) e finalize sua documentação.
+
+---
+
+## Próximos passos sugeridos
+- Adicionar rota simples `/healthz` na API para health check.
+- Se ainda não tiver, implementar a rotação de chaves (JWKS) e expirações curtas.
+- Criar Google Form para intake de apps (coloque o link no Portal).
