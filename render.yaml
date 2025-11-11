@@ -36,7 +36,7 @@ services:
       - key: JWT_PRIVATE_KEY_PEM
         sync: false  # adicionar esse secret no painel do Render
 
-  - type: static
+  - type: static_site
     name: tinyoauth-portal
     plan: free
     rootDir: portal
