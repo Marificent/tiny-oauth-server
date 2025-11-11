@@ -117,6 +117,32 @@ app.post("/token", (req, res, next) => {
 // 9) START — o listen fica ANTES de inicializações frágeis
 console.log("[BOOT] prestes a chamar app.listen");
 const PORT = process.env.PORT || 10000;
+
+// TEMP: ver se a env está chegando
+app.get("/debug/env", (req, res) => {
+  const s = process.env.JWT_PRIVATE_KEY_PEM || "";
+  res.json({
+    hasKey: !!s,
+    length: s.length,
+    beginsWith: s.slice(0, 30)
+  });
+});
+
+// TEMP: debug do JWKS (mostra erro se falhar)
+app.get("/debug/jwks", (req, res) => {
+  try {
+    const pem = process.env.JWT_PRIVATE_KEY_PEM;
+    if (!pem) throw new Error("JWT_PRIVATE_KEY_PEM ausente");
+    const { createPrivateKey, createPublicKey } = require("crypto");
+    const priv = createPrivateKey({ key: pem });
+    const pub = createPublicKey(priv);
+    const jwk = pub.export({ format: "jwk" });
+    res.json({ ok: true, jwkKeys: Object.keys(jwk) });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[BOOT] servidor ouvindo na porta ${PORT}`);
 });
