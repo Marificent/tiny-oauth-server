@@ -1,4 +1,13 @@
 // server.js
+console.log("[BOOT] entrando em server.js");
+
+process.on("uncaughtException", (err) => {
+  console.error("[BOOT] uncaughtException:", err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[BOOT] unhandledRejection:", err);
+});
+
 const express = require("express");
 const axios = require("axios");
 const qs = require("qs");
@@ -6,14 +15,18 @@ const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 require("dotenv").config();
 
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
 // Evita erro de variável indefinida em produção
 const data = { notas: [] };
 
-// Inicializa app
-const app = express();
-
 // ativa o cookie-parser logo depois de criar o app
 app.use(cookieParser(process.env.COOKIE_SECRET || "dev-secret"));
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // permite que o servidor receba JSON no body das requisições
 app.use(express.json());
@@ -394,30 +407,44 @@ app.get('/oauth/authorize', (req, res) => {
   res.redirect(302, `/authorize${qs ? '?' + qs : ''}`);
 });
 
-app.post('/oauth/token', (req, res) => {
-  req.url = '/token';
-  app._router.handle(req, res);
+app.post("/oauth/token", (req, res) => {
+  const qs = req.originalUrl.split("?")[1];
+  res.redirect(307, "/token" + (qs ? "?" + qs : ""));
 });
 
-app.post('/oauth/revoke', (req, res) => {
-  req.url = '/revoke';
-  app._router.handle(req, res);
+app.post("/oauth/revoke", (req, res) => {
+  const qs = req.originalUrl.split("?")[1];
+  res.redirect(307, "/revoke" + (qs ? "?" + qs : ""));
 });
 
-app.get('/.well-known/openid-configuration', (req, res) => {
+app.get("/.well-known/openid-configuration", (req, res) => {
+  const iss = (process.env.ISSUER_URL || "").replace(/\/$/, "");
   res.json({
-    issuer: process.env.ISSUER_URL,
-    authorization_endpoint: `${process.env.ISSUER_URL}/oauth/authorize`,
-    token_endpoint: `${process.env.ISSUER_URL}/oauth/token`,
-    jwks_uri: `${process.env.ISSUER_URL}/.well-known/jwks.json`,
-    response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code', 'client_credentials', 'refresh_token'],
-    code_challenge_methods_supported: ['S256'],
-    token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-    scopes_supported: ['openid', 'profile', 'email'],
+    issuer: iss,
+    authorization_endpoint: iss + "/oauth/authorize",
+    token_endpoint: iss + "/oauth/token",
+    jwks_uri: iss + "/.well-known/jwks.json",
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code", "client_credentials", "refresh_token"],
+    code_challenge_methods_supported: ["S256"],
+    token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+    scopes_supported: ["openid", "profile", "email"],
   });
 });
 
 app.listen(PORT, () => {
   console.log(`Servidor no ar: porta ${PORT}`);
 });
+
+// 7) ⚙️ INICIALIZAÇÕES MAIS FRÁGEIS (DB, arquivos, jobs) — SEM process.exit()
+// (se algo falhar, apenas logue o erro; não derrube o processo)
+(async () => {
+  try {
+    // await connectDB();
+    // await carregarDados();
+    console.log("[BOOT] inicializações pós-listen concluídas");
+  } catch (e) {
+    console.error("[BOOT] falha em inicializações pós-listen:", e);
+    // NÃO chame process.exit(1)
+  }
+})();
