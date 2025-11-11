@@ -34,11 +34,3 @@ services:
         value: "kid-1"
       - key: JWT_PRIVATE_KEY_PEM
         sync: false
-
-staticSites:
-  - name: tinyoauth-portal
-    plan: free
-    rootDir: portal
-    buildCommand: ""
-    publishPath: "."
-    autoDeploy: true
