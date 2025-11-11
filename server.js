@@ -1,4 +1,21 @@
 // server.js
+
+// --- DIAGNÓSTICO DE SAÍDA PRECOCE ---
+console.log("[BOOT] entrando em server.js");
+
+const realExit = process.exit;
+process.exit = (code) => {
+  console.error("[BOOT] process.exit chamado com código:", code, "\nSTACK:", new Error().stack);
+  realExit(code || 0);
+};
+
+process.on("uncaughtException", (err) => {
+  console.error("[BOOT] uncaughtException:", err && err.stack || err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[BOOT] unhandledRejection:", reason);
+});
+
 console.log("[BOOT] entrando em server.js");
 
 process.on("uncaughtException", (err) => {
@@ -21,6 +38,8 @@ app.use(express.urlencoded({ extended: false }));
 
 // Evita erro de variável indefinida em produção
 const data = { notas: [] };
+
+const fs = require("fs");
 
 // ativa o cookie-parser logo depois de criar o app
 app.use(cookieParser(process.env.COOKIE_SECRET || "dev-secret"));
@@ -440,11 +459,28 @@ app.listen(PORT, () => {
 // (se algo falhar, apenas logue o erro; não derrube o processo)
 (async () => {
   try {
-    // await connectDB();
-    // await carregarDados();
+    // 1) ENV OBRIGATÓRIAS — não derrubar o processo, apenas avisar
+    if (!process.env.JWT_PRIVATE_KEY_PEM) {
+      console.warn("[BOOT] WARN: JWT_PRIVATE_KEY_PEM ausente — JWKS/assinatura podem falhar; prosseguindo sem derrubar.");
+      // opcional: habilitar modo “dev” sem assinatura, ou montar um JWKS vazio
+    }
+
+    // 2) DB — conectar de forma resiliente (ex.: com timeout e retry simples)
+    // await connectDB(); // se falhar:
+    // console.error("[BOOT] falha ao conectar no DB:", e);
+
+    // 3) Leitura de arquivos / chaves
+    // let raw = "";
+    // try { raw = fs.readFileSync("./config.json","utf8"); } catch (e) { console.warn("[BOOT] config.json não encontrado; usando defaults"); }
+    // let cfg = {};
+    // try { cfg = raw ? JSON.parse(raw) : {}; } catch (e) { console.warn("[BOOT] config.json inválido; usando defaults"); }
+
+    // 4) Chamada a Tiny/Meli (se precisar token/cache no boot)
+    // try { await warmUpTiny(); } catch (e) { console.warn("[BOOT] Tiny warmup falhou; continua"); }
+
     console.log("[BOOT] inicializações pós-listen concluídas");
   } catch (e) {
     console.error("[BOOT] falha em inicializações pós-listen:", e);
-    // NÃO chame process.exit(1)
+    // IMPORTANTE: não fazer process.exit aqui
   }
 })();
