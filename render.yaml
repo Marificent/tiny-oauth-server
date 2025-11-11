@@ -22,7 +22,7 @@ services:
           name: tinyoauth-db
           property: connectionString
       - key: ISSUER_URL
-        value: "https://tinyoauth-api.onrender.com"
+        value: "https://tiny-oauth-server.onrender.com"
       - key: TOKEN_TTL_SEC
         value: "900"
       - key: REFRESH_TTL_DAYS
@@ -34,7 +34,8 @@ services:
       - key: JWKS_KID
         value: "kid-1"
       - key: JWT_PRIVATE_KEY_PEM
-        sync: false  # adicionar esse secret no painel do Render
+        sync: false
+
 
   - type: static_site
     name: tinyoauth-portal
