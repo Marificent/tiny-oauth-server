@@ -1,4 +1,3 @@
-# render.yaml — API no raiz + Postgres (Free) + Portal estático (Free)
 databases:
   - name: tinyoauth-db
     databaseName: tinyoauth
@@ -36,11 +35,10 @@ services:
       - key: JWT_PRIVATE_KEY_PEM
         sync: false
 
-
-  - type: static_site
-    name: tinyoauth-portal
+staticSites:
+  - name: tinyoauth-portal
     plan: free
     rootDir: portal
     buildCommand: ""
-    staticPublishPath: "."
+    publishPath: "."
     autoDeploy: true
