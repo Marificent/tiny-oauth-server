@@ -6,6 +6,9 @@ const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 require("dotenv").config();
 
+// Evita erro de variável indefinida em produção
+const data = { notas: [] };
+
 // Inicializa app
 const app = express();
 
@@ -125,9 +128,9 @@ async function fetchTinyInvoicesTotal(fromDate, toDate) {
   // ⚠️ Ajuste o caminho/nomes conforme o seu retorno.
   // Abaixo eu tento cobrir dois formatos típicos: { notas: [...] } ou { data: { items: [...] } }
   const list =
-    Array.isArray(data?.notas) ? data.notas
-    : Array.isArray(data?.data?.items) ? data.data.items
-    : [];
+  Array.isArray(data.notas) ? data.notas
+  : Array.isArray(data.data?.items) ? data.data.items
+  : [];
 
   // Ajuste os campos: tente "valorTotal", senão "amount", senão 0
   const total = list.reduce((acc, n) => {
