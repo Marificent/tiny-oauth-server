@@ -45,6 +45,19 @@
       <div class="body">
         <!-- TAB: DEMO -->
         <div id="tab-demo">
+        <div class="actions" style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:8px">
+                <input type="checkbox" id="useTiny" />
+                Usar Tiny (produção)
+            </label>
+            <label style="display:flex;align-items:center;gap:8px">
+                Página: <input id="page" type="number" value="1" min="1" style="width:90px"/>
+             </label>
+            <button class="btn" id="btnPrev">◀</button>
+            <button class="btn" id="btnNext">▶</button>
+        </div>
+        <!-- Lista bonitinha -->
+        <div id="listDemo" style="margin-top:16px; display:grid; gap:12px"></div>
           <div class="row cols2">
             <div>
               <label>Consulta</label>
@@ -153,15 +166,106 @@
     const count = document.getElementById('count');
 
     function searchDemo() {
-      const term = (q.value || '').toLowerCase().trim();
-      const filt = f.value;
-      const res = DATA.filter(row => {
-        if (filt && row.tipo !== filt) return false;
-        const txt = JSON.stringify(row).toLowerCase();
-        return !term || txt.includes(term);
-      });
-      count.textContent = res.length + ' resultados';
-      outDemo.textContent = JSON.stringify(res, null, 2);
+      const dini = document.getElementById('dini');     // se você já adicionou datas antes; se não, ignore
+const dfim = document.getElementById('dfim');     // idem
+const statusSel = document.getElementById('status'); // idem
+const canalSel  = document.getElementById('canal');  // idem
+
+const useTiny  = document.getElementById('useTiny');
+const pageEl   = document.getElementById('page');
+const btnPrev  = document.getElementById('btnPrev');
+const btnNext  = document.getElementById('btnNext');
+const listDemo = document.getElementById('listDemo');
+
+function fmtBRL(v) {
+  const n = Number(v);
+  if (isNaN(n)) return v;
+  return n.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+}
+
+function renderProductsTiny(json) {
+  // Tiny: { retorno: { status, pagina, numero_paginas, produtos:[ { produto: {...} }, ... ] } }
+  const ret = json?.retorno || {};
+  const arr = Array.isArray(ret.produtos) ? ret.produtos : [];
+  count.textContent = (arr.length || 0) + ' resultados (pág ' + (ret.pagina || 1) + '/' + (ret.numero_paginas || '?') + ')';
+
+  // Montar cards simples
+  listDemo.innerHTML = arr.map(w => {
+    const p = w?.produto || {};
+    const nome   = p.nome || p.descricao || '(sem nome)';
+    const codigo = p.codigo || p.sku || '';
+    const preco  = p.preco || p.preco_venda || p.preco_base || p.preco_tabela || '';
+    const estoque = p.estoque || p.saldo_estoque || p.saldo || '';
+    const id = p.id || p.id_produto || '';
+    return `
+      <div class="card" style="padding:12px">
+        <div style="font-weight:700">${nome}</div>
+        <div class="muted" style="font-size:12px;margin:4px 0">Código: ${codigo || '-' } · ID: ${id || '-'}</div>
+        <div style="display:flex;gap:16px;margin-top:6px">
+          <span class="pill">Preço: ${preco!=='' ? fmtBRL(preco) : '-'}</span>
+          <span class="pill">Estoque: ${estoque!=='' ? estoque : '-'}</span>
+        </div>
+      </div>
+    `;
+  }).join('') || `<div class="muted">Sem resultados nesta página.</div>`;
+}
+
+async function searchTinyProducts() {
+  const term = (q.value || '').trim();
+  const page = Math.max(1, parseInt(pageEl.value || '1', 10));
+  const base = 'https://tinyoauth-api.onrender.com';
+  const params = new URLSearchParams();
+  if (term) params.set('q', term);
+  params.set('pagina', String(page));
+  // Exemplos de filtros adicionais quando quisermos:
+  // if (statusSel?.value) params.set('status', statusSel.value);
+  // if (dini?.value) params.set('dataInicial', dini.value);
+  // if (dfim?.value) params.set('dataFinal', dfim.value);
+
+  outDemo.textContent = 'Carregando do Tiny...';
+  listDemo.innerHTML = '';
+  try {
+    const r = await fetch(`${base}/api/tiny/produtos.pesquisa.php?` + params.toString());
+    const json = await r.json();
+    outDemo.textContent = JSON.stringify(json, null, 2);
+    renderProductsTiny(json);
+  } catch (e) {
+    outDemo.textContent = 'Erro: ' + (e?.message || e);
+    listDemo.innerHTML = '<div class="muted">Falha ao buscar no Tiny.</div>';
+  }
+}
+
+function searchLocalDemo() {
+  const term = (q.value || '').toLowerCase().trim();
+  const filt = f.value;
+  const res = DATA.filter(row => {
+    if (filt && row.tipo !== filt) return false;
+    const txt = JSON.stringify(row).toLowerCase();
+    return !term || txt.includes(term);
+  });
+  count.textContent = res.length + ' resultados (demo)';
+  listDemo.innerHTML = res.map(r => `
+    <div class="card" style="padding:12px">
+      <div style="font-weight:700">${r.nome || r.id || r.sku || '(item)'}</div>
+      <div class="muted" style="font-size:12px">${r.tipo || '—'}</div>
+      <div class="pill" style="margin-top:6px">${r.preco ? fmtBRL(r.preco) : ''}</div>
+    </div>
+  `).join('') || `<div class="muted">Sem resultados no dataset demo.</div>`;
+  outDemo.textContent = JSON.stringify(res, null, 2);
+}
+
+function searchDemo() {
+  if (useTiny.checked) return searchTinyProducts();
+  return searchLocalDemo();
+}
+
+document.getElementById('btnSearch').onclick = searchDemo;
+document.getElementById('btnReset').onclick = () => { q.value=''; f.value=''; pageEl.value='1'; searchDemo(); };
+btnPrev.onclick = () => { const p = Math.max(2, parseInt(pageEl.value||'1',10)); pageEl.value = String(p-1); searchDemo(); };
+btnNext.onclick = () => { const p = Math.max(1, parseInt(pageEl.value||'1',10)); pageEl.value = String(p+1); searchDemo(); };
+
+// inicia com demo local
+searchDemo();
     }
     document.getElementById('btnSearch').onclick = searchDemo;
     document.getElementById('btnReset').onclick = () => { q.value=''; f.value=''; searchDemo(); };
