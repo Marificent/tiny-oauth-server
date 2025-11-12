@@ -27,6 +27,15 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// CORS básico (permitir chamadas do portal)
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*"); // depois podemos restringir ao domínio do portal
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+});
+
 // 3) VARIÁVEIS E HELPERS
 const ISSUER = (process.env.ISSUER_URL || "").replace(/\/$/, "");
 const KID = process.env.JWKS_KID || "kid-1";
@@ -140,6 +149,54 @@ app.get("/debug/jwks", (req, res) => {
     res.json({ ok: true, jwkKeys: Object.keys(jwk) });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// 🔐 Proxy Tiny seguro (whitelist de endpoints) — Tiny API clássica usa /api2/*.php
+const ALLOW_TINY = new Set([
+  "pedidos.pesquisa.php",
+  "clientes.pesquisa.php",
+  "produtos.pesquisa.php",
+  // adicione mais aqui conforme for usando
+]);
+
+app.get("/api/tiny/:endpoint", async (req, res) => {
+  try {
+    const base = (process.env.TINY_API_BASE || "").replace(/\/$/, "");
+    const token = process.env.TINY_API_TOKEN || "";
+    if (!base || !token) {
+      return res.status(500).json({ error: "tiny_not_configured" });
+    }
+
+    const endpoint = String(req.params.endpoint || "");
+    if (!ALLOW_TINY.has(endpoint)) {
+      return res.status(400).json({ error: "endpoint_not_allowed", endpoint });
+    }
+
+    // monta query: repassa tudo que veio do cliente + injeta token e formato=json
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(req.query || {})) {
+      if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    }
+    // Tiny clássico: token e formato (ajuste se seu Tiny usar outro estilo)
+    if (!params.has("token")) params.set("token", token);
+    if (!params.has("formato")) params.set("formato", "json");
+
+    const url = `${base}/api2/${endpoint}?${params.toString()}`;
+
+    // chamada server→server
+    const r = await fetch(url, {
+      method: "GET",
+      headers: { "Accept": "application/json" }
+    });
+
+    const txt = await r.text();
+    let out; try { out = JSON.parse(txt); } catch { out = { raw: txt }; }
+
+    return res.status(r.status).json(out);
+  } catch (e) {
+    console.error("[tiny-proxy] erro:", e);
+    return res.status(500).json({ error: "proxy_error", detail: String(e) });
   }
 });
 
