@@ -22,6 +22,8 @@ setInterval(() => {}, 60 * 60 * 1000);
 const express = require("express");
 const { createPrivateKey, createPublicKey } = require("crypto");
 const app = express();
+const codeStore = new Map(); // já declarado uma vez
+
 
 // 2) PARSERS (necessário para /oauth/token)
 app.use(express.json());
@@ -103,16 +105,80 @@ app.post("/oauth/revoke", (req, res) => {
 
 // 8) SUAS ROTAS REAIS (ex.: /authorize, /token, /userinfo, etc.)
 //    Mantenha o que você já tinha aqui. Exemplo de placeholders:
-app.get("/authorize", (req, res, next) => {
-  // TODO: sua lógica real de authorize (login/consent + emitir code)
-  // Se ainda não implementado, devolve 501 para ficar claro:
-  res.status(501).send("authorize handler not implemented");
+// ===== /authorize (gera authorization code com PKCE) =====
+app.get("/authorize", (req, res) => {
+  const {
+    response_type, client_id, redirect_uri, scope = "", state = "",
+    code_challenge, code_challenge_method
+  } = req.query;
+
+  if (response_type !== "code") {
+    return res.status(400).send("invalid_request: response_type must be 'code'");
+  }
+  if (!client_id) return res.status(400).send("invalid_request: client_id required");
+  if (!redirect_uri) return res.status(400).send("invalid_request: redirect_uri required");
+  if (!code_challenge || code_challenge_method !== "S256") {
+    return res.status(400).send("invalid_request: PKCE S256 required");
+  }
+
+  // TODO (depois): validar client_id/redirect_uri/scope no seu cadastro
+  const { randomBytes } = require("crypto");
+  const code = randomBytes(32).toString("hex");
+  const now = Math.floor(Date.now() / 1000);
+
+  // use o mesmo store em memória do passo anterior
+  codeStore.set(code, {
+    client_id,
+    redirect_uri,
+    scope,
+    code_challenge,
+    exp: now + 180 // 3 min
+  });
+
+  const url = new URL(redirect_uri);
+  url.searchParams.set("code", code);
+  if (state) url.searchParams.set("state", state);
+  return res.redirect(302, url.toString());
 });
 
-app.post("/token", (req, res, next) => {
-  // TODO: sua lógica real de token (authorization_code, client_credentials, refresh_token)
-  res.status(501).send("token handler not implemented");
+
+app.post("/token", (req, res) => {
+  const { grant_type, code, redirect_uri, client_id, code_verifier } = req.body || {};
+  if (grant_type !== "authorization_code") return res.status(400).json({ error: "unsupported_grant_type" });
+  if (!code || !redirect_uri || !client_id || !code_verifier) return res.status(400).json({ error: "invalid_request" });
+
+  const entry = codeStore.get(code);
+  if (!entry) return res.status(400).json({ error: "invalid_grant" });
+
+  const now = Math.floor(Date.now() / 1000);
+  if (entry.exp < now) { codeStore.delete(code); return res.status(400).json({ error: "invalid_grant" }); }
+  if (entry.client_id !== client_id || entry.redirect_uri !== redirect_uri) return res.status(400).json({ error: "invalid_grant" });
+
+  const crypto = require("crypto");
+  const challenge = crypto.createHash("sha256").update(code_verifier).digest("base64")
+    .replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
+  if (challenge !== entry.code_challenge) return res.status(400).json({ error: "invalid_grant" });
+
+  codeStore.delete(code);
+
+  const pem = process.env.JWT_PRIVATE_KEY_PEM;
+  if (!pem) return res.status(500).json({ error: "server_error", error_description: "missing signing key" });
+
+  const iat = Math.floor(Date.now()/1000);
+  const exp = iat + (parseInt(process.env.TOKEN_TTL_SEC || "900",10));
+  const payload = { iss: ISSUER || "", aud: client_id, sub: "user-123", iat, exp, scope: entry.scope };
+  const header = { alg: "RS256", typ: "JWT", kid: KID };
+
+  const { createSign, createPrivateKey } = require("crypto");
+  const enc = (o)=>Buffer.from(JSON.stringify(o)).toString("base64").replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
+  const input = `${enc(header)}.${enc(payload)}`;
+  const sig = createSign("RSA-SHA256").update(input).end().sign(createPrivateKey(pem)).toString("base64")
+               .replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
+  const access_token = `${input}.${sig}`;
+
+  return res.json({ token_type: "Bearer", access_token, expires_in: exp - iat, scope: entry.scope });
 });
+
 
 // 9) START — o listen fica ANTES de inicializações frágeis
 console.log("[BOOT] prestes a chamar app.listen");
