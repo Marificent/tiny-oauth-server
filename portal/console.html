@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Tiny OAuth – Console & Busca</title>
+  <style>
+    :root { font-family: Inter, system-ui, Arial, sans-serif; }
+    body { margin: 0; background: #0b1020; color: #e8ecf1; }
+    .wrap { max-width: 960px; margin: 40px auto; padding: 0 16px; }
+    .card { background: #121a33; border: 1px solid #233056; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+    .head { padding: 20px 24px; border-bottom: 1px solid #233056; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+    .tabs { display: flex; gap: 8px; }
+    .tab { padding: 10px 14px; border-radius: 20px; cursor: pointer; border: 1px solid #2f3c66; background:#0c1430; }
+    .tab.active { background:#1c2750; border-color:#4b64aa; }
+    .body { padding: 24px; }
+    input, textarea, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #2f3c66; background:#0c1430; color:#e8ecf1; }
+    label { font-size: 12px; color:#a8b3d1; margin-bottom: 6px; display:block; }
+    .row { display: grid; gap: 14px; }
+    .row.cols2 { grid-template-columns: 1fr 1fr; }
+    .btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #4b64aa; background:#1c2750; color:#e8ecf1; cursor:pointer; }
+    .btn.secondary { background:#0c1430; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .actions { display:flex; gap:10px; margin-top:12px; }
+    pre { background:#0c1430; border:1px solid #2f3c66; border-radius:12px; padding:14px; overflow:auto; }
+    .pill { padding:4px 10px; border-radius:999px; background:#0c1430; border:1px solid #2f3c66; font-size:12px; }
+    .muted { color:#9fb0d9; }
+    .hint { font-size:12px; color:#95a6d6; }
+    a { color:#9dc1ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="head">
+        <div>
+          <div style="font-size:18px;font-weight:700">Tiny OAuth – Console & Busca</div>
+          <div class="muted" style="font-size:13px">Demonstração rápida para apresentação</div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-tab="demo">Busca Demo</button>
+          <button class="tab" data-tab="api">API Console</button>
+        </div>
+      </div>
+      <div class="body">
+        <!-- TAB: DEMO -->
+        <div id="tab-demo">
+          <div class="row cols2">
+            <div>
+              <label>Consulta</label>
+              <input id="q" placeholder="ex.: caneta, pedido #1234, cliente maria..." />
+            </div>
+            <div>
+              <label>Filtro rápido</label>
+              <select id="f">
+                <option value="">(todos)</option>
+                <option value="pedido">Pedidos</option>
+                <option value="cliente">Clientes</option>
+                <option value="produto">Produtos</option>
+              </select>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn" id="btnSearch">Buscar</button>
+            <button class="btn secondary" id="btnReset">Limpar</button>
+            <span class="pill" id="count">0 resultados</span>
+          </div>
+          <div style="margin-top:16px">
+            <pre id="outDemo">Faça uma busca para ver resultados.</pre>
+            <div class="hint">* Esta busca roda 100% no navegador (sem backend). Você pode trocar o dataset no código depois.</div>
+          </div>
+        </div>
+
+        <!-- TAB: API -->
+        <div id="tab-api" style="display:none">
+          <div class="row">
+            <div class="row cols2">
+              <div>
+                <label>Base URL (ISSUER)</label>
+                <input id="issuer" value="https://tinyoauth-api.onrender.com"/>
+              </div>
+              <div>
+                <label>Endpoint</label>
+                <input id="endpoint" value="/userinfo" />
+              </div>
+            </div>
+            <div>
+              <label>Bearer Token (cole aqui seu access_token)</label>
+              <textarea id="token" rows="3" placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtpZC0xIn0..."></textarea>
+            </div>
+            <div class="row cols2">
+              <div>
+                <label>Método</label>
+                <select id="method">
+                  <option>GET</option>
+                  <option>POST</option>
+                </select>
+              </div>
+              <div>
+                <label>Content-Type</label>
+                <select id="ctype">
+                  <option>application/json</option>
+                  <option>application/x-www-form-urlencoded</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label>Body (opcional)</label>
+              <textarea id="body" rows="4" placeholder='{"example":"value"}'></textarea>
+            </div>
+            <div class="actions">
+              <button class="btn" id="btnCall">Chamar API</button>
+              <span class="pill muted">Dica: gere o token pelo Portal (PKCE) e cole aqui</span>
+            </div>
+            <div style="margin-top:16px">
+              <pre id="outApi">Resposta aparecerá aqui.</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="hint" style="margin-top:14px">
+      Precisa do token? Gere no Portal principal (PKCE), copie o <code>access_token</code> e cole aqui na aba API.
+    </p>
+  </div>
+
+  <script>
+    // Tabs
+    const tabs = document.querySelectorAll('.tab');
+    const tabDemo = document.getElementById('tab-demo');
+    const tabApi = document.getElementById('tab-api');
+    tabs.forEach(t => t.onclick = () => {
+      tabs.forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      tabDemo.style.display = t.dataset.tab === 'demo' ? '' : 'none';
+      tabApi.style.display  = t.dataset.tab === 'api'  ? '' : 'none';
+    });
+
+    // Demo data (client-side)
+    const DATA = [
+      { tipo:'pedido', id:'P-10293', cliente:'Maria Silva', total: 189.90, itens:['Caneta Gel','Planner 2025'] },
+      { tipo:'pedido', id:'P-10294', cliente:'João Souza', total: 72.50, itens:['Caderno Pautado','Grafite 0.5'] },
+      { tipo:'cliente', id:'C-889',  nome:'Maria Silva', cidade:'São Paulo', email:'maria@example.org' },
+      { tipo:'cliente', id:'C-991',  nome:'Ana Lima', cidade:'Curitiba', email:'ana@example.org' },
+      { tipo:'produto', sku:'CAN-GEL-NEON', nome:'Caneta Gel Neon', preco:9.90, estoque:120 },
+      { tipo:'produto', sku:'CAD-PAU-100',  nome:'Caderno Pautado 100f', preco:19.90, estoque:45 },
+    ];
+
+    const q = document.getElementById('q');
+    const f = document.getElementById('f');
+    const outDemo = document.getElementById('outDemo');
+    const count = document.getElementById('count');
+
+    function searchDemo() {
+      const term = (q.value || '').toLowerCase().trim();
+      const filt = f.value;
+      const res = DATA.filter(row => {
+        if (filt && row.tipo !== filt) return false;
+        const txt = JSON.stringify(row).toLowerCase();
+        return !term || txt.includes(term);
+      });
+      count.textContent = res.length + ' resultados';
+      outDemo.textContent = JSON.stringify(res, null, 2);
+    }
+    document.getElementById('btnSearch').onclick = searchDemo;
+    document.getElementById('btnReset').onclick = () => { q.value=''; f.value=''; searchDemo(); };
+    searchDemo();
+
+    // API Console
+    const btnCall = document.getElementById('btnCall');
+    btnCall.onclick = async () => {
+      const base = document.getElementById('issuer').value.replace(/\/$/, '');
+      const endpoint = document.getElementById('endpoint').value;
+      const token = document.getElementById('token').value.trim();
+      const method = document.getElementById('method').value;
+      const ctype  = document.getElementById('ctype').value;
+      const body   = document.getElementById('body').value.trim();
+
+      const headers = {};
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      headers['Content-Type'] = ctype;
+
+      let payload;
+      if (method !== 'GET' && body) {
+        if (ctype === 'application/json') {
+          try { payload = JSON.stringify(JSON.parse(body)); }
+          catch(e){ return outApi.textContent = 'Body JSON inválido'; }
+        } else {
+          payload = new URLSearchParams(JSON.parse(body));
+        }
+      }
+
+      outApi.textContent = 'Chamando...';
+      try {
+        const r = await fetch(base + endpoint, { method, headers, body: payload });
+        const txt = await r.text();
+        let pretty = txt;
+        try { pretty = JSON.stringify(JSON.parse(txt), null, 2); } catch(e){}
+        outApi.textContent = `Status: ${r.status}\n\n` + pretty;
+      } catch (e) {
+        outApi.textContent = 'Erro: ' + (e?.message || e);
+      }
+    };
+  </script>
+</body>
+</html>
