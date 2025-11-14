@@ -45,6 +45,26 @@
       <div class="body">
         <!-- TAB: DEMO -->
         <div id="tab-demo">
+          <div class="row cols2" style="margin-top:10px">
+          <div>
+            <label>Campo</label>
+            <select id="campo">
+              <option value="auto">(automático)</option>
+              <option value="nome">Nome</option>
+              <option value="codigo">Código</option>
+              <option value="sku">SKU</option>
+            </select>
+          </div>
+          <div>
+            <label>Modo</label>
+            <select id="modo">
+              <option value="amplo">Amplo (contém)</option>
+              <option value="palavra">Palavra inteira</option>
+              <option value="prefixo">Começa com</option>
+              <option value="exato">Exato</option>
+            </select>
+          </div>
+        </div>
         <div class="actions" style="margin-top:8px">
             <label style="display:flex;align-items:center;gap:8px">
                 <input type="checkbox" id="useTiny" />
@@ -165,6 +185,19 @@
     const outDemo = document.getElementById('outDemo');
     const count = document.getElementById('count');
 
+    const campoSel = document.getElementById('campo');
+const modoSel  = document.getElementById('modo');
+
+const norm = (s) => (s||"").toString().toLowerCase()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g,""); // sem acentos
+function matchByMode(haystack, needle, modo) {
+  if (!needle) return true;
+  if (modo === 'exato')   return norm(haystack) === norm(needle);
+  if (modo === 'prefixo') return norm(haystack).startsWith(norm(needle));
+  if (modo === 'palavra') return new RegExp(`\\b${norm(needle).replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\b`).test(norm(haystack));
+  return norm(haystack).includes(norm(needle)); // amplo
+}
+
     function searchDemo() {
       const dini = document.getElementById('dini');     // se você já adicionou datas antes; se não, ignore
 const dfim = document.getElementById('dfim');     // idem
@@ -227,8 +260,41 @@ async function searchTinyProducts() {
   try {
     const r = await fetch(`${base}/api/tiny/produtos.pesquisa.php?` + params.toString());
     const json = await r.json();
-    outDemo.textContent = JSON.stringify(json, null, 2);
-    renderProductsTiny(json);
+
+    // ---- Filtro local por campo/modo (deixa a busca mais “estrita”) ----
+    const campo = campoSel.value; // auto, nome, codigo, sku
+    const modo  = modoSel.value;  // amplo, palavra, prefixo, exato
+    const ret = json?.retorno || {};
+    const arr = Array.isArray(ret.produtos) ? ret.produtos : [];
+
+    const filtrados = arr.filter(w => {
+      const p = w?.produto || {};
+      let alvo = '';
+
+      if (campo === 'nome')        alvo = p.nome || p.descricao || '';
+      else if (campo === 'codigo') alvo = p.codigo || '';
+      else if (campo === 'sku')    alvo = p.sku || p.codigo || '';
+      else {
+        // auto: junta campos relevantes
+        alvo = [p.nome, p.descricao, p.codigo, p.sku].filter(Boolean).join(' ');
+      }
+      return matchByMode(alvo, term, modo);
+    });
+
+    const jsonFiltrado = {
+      ...json,
+      retorno: {
+        ...ret,
+        produtos: filtrados,
+        pagina: ret.pagina,
+        numero_paginas: ret.numero_paginas
+      }
+    };
+
+        outDemo.textContent = JSON.stringify(jsonFiltrado, null, 2);
+        renderProductsTiny(jsonFiltrado);
+
+
   } catch (e) {
     outDemo.textContent = 'Erro: ' + (e?.message || e);
     listDemo.innerHTML = '<div class="muted">Falha ao buscar no Tiny.</div>';
