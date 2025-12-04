@@ -3,7 +3,27 @@ require("dotenv").config();
 const { Client } = require("pg");
 
 const sql = `
--- ===== TABELAS-BASE =====
+-- ===== SCHEMAS =====
+CREATE SCHEMA IF NOT EXISTS dw;
+CREATE SCHEMA IF NOT EXISTS analytics;
+CREATE SCHEMA IF NOT EXISTS staging;
+
+-- ===== STAGING: PRODUTOS (USADO PELO etl_products.js) =====
+CREATE TABLE IF NOT EXISTS staging.stg_products (
+  id                BIGINT PRIMARY KEY,
+  codigo            TEXT,
+  nome              TEXT,
+  gtin              TEXT,
+  unidade           TEXT,
+  preco             NUMERIC,
+  preco_promocional NUMERIC,
+  situacao          TEXT,
+  localizacao       TEXT,
+  data_criacao      TIMESTAMP NULL,
+  raw_json          JSONB
+);
+
+-- ===== TABELAS-BASE: RAW TINY =====
 CREATE TABLE IF NOT EXISTS public.tiny_products (
   id                BIGINT PRIMARY KEY,
   sku               TEXT,
@@ -43,10 +63,43 @@ CREATE TABLE IF NOT EXISTS public.tiny_order_items (
 -- acelera joins
 CREATE INDEX IF NOT EXISTS idx_tiny_order_items_order_id ON public.tiny_order_items(order_id);
 
+-- ===== TABELA DW DE PRODUTOS (USADA PELO ingest_products.js) =====
+CREATE TABLE IF NOT EXISTS dw.products (
+  id                  BIGINT PRIMARY KEY,
+  codigo              TEXT,
+  nome                TEXT,
+  preco               NUMERIC,
+  preco_promocional   NUMERIC,
+  unidade             TEXT,
+  gtin                TEXT,
+  tipo_variacao       TEXT,
+  localizacao         TEXT,
+  preco_custo         NUMERIC,
+  preco_custo_medio   NUMERIC,
+  situacao            TEXT,
+  criado_em           TIMESTAMP NULL
+);
+
+-- ===== DIMENSÃO DE PRODUTO (USADA PELO etl_products.js) =====
+CREATE TABLE IF NOT EXISTS dw.dim_product (
+  codigo            TEXT PRIMARY KEY,
+  id_tiny           BIGINT,
+  nome              TEXT,
+  gtin              TEXT,
+  unidade           TEXT,
+  situacao          TEXT,
+  localizacao       TEXT,
+  preco             NUMERIC,
+  preco_promocional NUMERIC,
+  created_at_raw    TIMESTAMP NULL,
+  updated_at        TIMESTAMP NULL DEFAULT NOW()
+);
+
 -- ===== MATERIALIZED VIEWS =====
+
 -- 30 dias por canal
-DROP MATERIALIZED VIEW IF EXISTS public.mv_channels_30d;
-CREATE MATERIALIZED VIEW public.mv_channels_30d AS
+DROP MATERIALIZED VIEW IF EXISTS analytics.mv_channels_30d;
+CREATE MATERIALIZED VIEW analytics.mv_channels_30d AS
 SELECT
   COALESCE(NULLIF(TRIM(channel), ''), '(sem canal)') AS channel,
   COUNT(*)::INT                                      AS orders_count,
@@ -57,14 +110,14 @@ GROUP BY 1
 ORDER BY revenue DESC NULLS LAST;
 
 -- top produtos 90 dias (por receita)
-DROP MATERIALIZED VIEW IF EXISTS public.mv_top_products_90d;
-CREATE MATERIALIZED VIEW public.mv_top_products_90d AS
+DROP MATERIALIZED VIEW IF EXISTS analytics.mv_top_products_90d;
+CREATE MATERIALIZED VIEW analytics.mv_top_products_90d AS
 WITH base AS (
   SELECT
-    COALESCE(NULLIF(TRIM(i.sku), ''), '(sem sku)')       AS sku,
-    COALESCE(NULLIF(TRIM(i.product_name), ''), '(sem nome)') AS product_name,
-    COALESCE(SUM(i.total), 0)::NUMERIC                   AS revenue,
-    COALESCE(SUM(i.qty), 0)::NUMERIC                     AS qty
+    COALESCE(NULLIF(TRIM(i.sku), ''), '(sem sku)')            AS sku,
+    COALESCE(NULLIF(TRIM(i.product_name), ''), '(sem nome)')  AS product_name,
+    COALESCE(SUM(i.total), 0)::NUMERIC                        AS revenue,
+    COALESCE(SUM(i.qty), 0)::NUMERIC                          AS qty
   FROM public.tiny_order_items i
   JOIN public.tiny_orders o
     ON o.id = i.order_id
@@ -78,8 +131,8 @@ FROM base
 ORDER BY rank;
 
 -- série diária (90 dias)
-DROP MATERIALIZED VIEW IF EXISTS public.mv_orders_daily;
-CREATE MATERIALIZED VIEW public.mv_orders_daily AS
+DROP MATERIALIZED VIEW IF EXISTS analytics.mv_orders_daily;
+CREATE MATERIALIZED VIEW analytics.mv_orders_daily AS
 SELECT
   o.order_date                          AS day,
   COUNT(*)::INT                         AS orders,
@@ -96,33 +149,31 @@ GROUP BY o.order_date
 ORDER BY o.order_date DESC;
 
 -- ===== ÍNDICES ÚNICOS PARA REFRESH CONCURRENTLY =====
--- (índices chave para permitir REFRESH CONCURRENTLY nas MVs)
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='ux_mv_channels_30d_channel'
+    SELECT 1 FROM pg_indexes WHERE schemaname='analytics' AND indexname='ux_mv_channels_30d_channel'
   ) THEN
     CREATE UNIQUE INDEX ux_mv_channels_30d_channel
-      ON public.mv_channels_30d(channel);
+      ON analytics.mv_channels_30d(channel);
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='ux_mv_top_products_90d_rank'
+    SELECT 1 FROM pg_indexes WHERE schemaname='analytics' AND indexname='ux_mv_top_products_90d_rank'
   ) THEN
     CREATE UNIQUE INDEX ux_mv_top_products_90d_rank
-      ON public.mv_top_products_90d(rank);
+      ON analytics.mv_top_products_90d(rank);
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='ux_mv_orders_daily_day'
+    SELECT 1 FROM pg_indexes WHERE schemaname='analytics' AND indexname='ux_mv_orders_daily_day'
   ) THEN
     CREATE UNIQUE INDEX ux_mv_orders_daily_day
-      ON public.mv_orders_daily(day);
+      ON analytics.mv_orders_daily(day);
   END IF;
 END$$;
 
--- ===== PERMISSÕES BÁSICAS (opcional) =====
--- GRANT SELECT ON ALL TABLES IN SCHEMA public TO PUBLIC;
+-- (permissões extras podem ser adicionadas aqui se necessário)
 `;
 
 (async () => {
@@ -133,13 +184,16 @@ END$$;
     user: process.env.PGUSER || "postgres",
     password: process.env.PGPASSWORD,
     application_name: "db_setup_all.js",
+    ssl: {
+      rejectUnauthorized: false, // 🔥 obrigatório p/ Postgres do Render
+    },
   });
 
   try {
     await client.connect();
     console.log("🏗️  Criando/recriando schema na base:", client.database);
     await client.query(sql);
-    console.log("✅ Schema e MVs prontos.");
+    console.log("✅ Schema, DW, staging e MVs prontos.");
   } catch (e) {
     console.error("❌ Erro na criação:", e.message || e);
     process.exitCode = 1;

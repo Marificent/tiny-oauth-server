@@ -34,6 +34,10 @@ const db = require("./db");
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+const path = require("path");
+
+app.use(express.static(path.join(__dirname, "public")));
+
 
 // CORS básico
 app.use((req, res, next) => {
@@ -164,6 +168,168 @@ app.post("/api/chat-tiny", async (req, res) => {
 // ---------------------------
 // 🔥 FIM DO GPTZÃO 🔥
 // ---------------------------
+
+// =====================================================================
+//  RELATÓRIOS SEM IA (usados pela aba "Relatórios & Filtros")
+// =====================================================================
+
+function parseDateOrNull(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function ensurePeriod(req, res) {
+  const start = parseDateOrNull(req.query.start);
+  const end = parseDateOrNull(req.query.end);
+
+  if (!start || !end) {
+    res.status(400).json({
+      error: "Parâmetros inválidos. Use ?start=YYYY-MM-DD&end=YYYY-MM-DD",
+    });
+    return null;
+  }
+
+  return { start, end };
+}
+
+// Lista de tags distintas (para popular o select no front)
+app.get("/api/tags", async (req, res) => {
+  try {
+    const sql = `
+      SELECT DISTINCT
+        UNNEST(string_to_array(tags, ','))::text AS tag
+      FROM dw.dim_product
+      WHERE situacao = 'A'
+        AND tags IS NOT NULL
+        AND tags <> ''
+      ORDER BY tag;
+    `;
+    const result = await db.query(sql);
+    const tags = result.rows
+      .map((r) => (r.tag || "").trim())
+      .filter((t) => t.length > 0);
+    return res.json(tags);
+  } catch (err) {
+    console.error("Erro em /api/tags:", err);
+    return res.status(500).json({ error: "Erro ao buscar tags" });
+  }
+});
+
+
+// Resumo geral do período (faturamento, unidades, ticket, etc.)
+app.get("/api/resumo-periodo", async (req, res) => {
+  try {
+    const period = ensurePeriod(req, res);
+    if (!period) return;
+
+    const { tag } = req.query;
+    const hasTag = !!tag;
+
+    const sql = `
+      SELECT
+        $1::date AS data_inicial,
+        $2::date AS data_final,
+        ${hasTag ? "$3::text AS tag," : "NULL::text AS tag,"}
+        SUM(quantidade)  AS total_unidades,
+        SUM(valor_total) AS total_faturado,
+        COUNT(DISTINCT produto) AS produtos_distintos,
+        COUNT(DISTINCT data)    AS dias_com_venda,
+        CASE
+          WHEN SUM(quantidade) > 0
+          THEN SUM(valor_total) / SUM(quantidade)
+          ELSE 0
+        END AS ticket_medio_por_unidade
+      FROM analytics.vw_tiny_sales_enriched
+      WHERE data >= $1
+        AND data <  $2 + INTERVAL '1 day'
+        ${hasTag ? "AND tags ILIKE '%' || $3 || '%'" : ""}
+    `;
+
+    const params = hasTag
+      ? [period.start, period.end, tag]
+      : [period.start, period.end];
+
+    const result = await db.query(sql, params);
+    return res.json(result.rows[0] || null);
+  } catch (err) {
+    console.error("Erro em /api/resumo-periodo:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// Top N produtos no período (por faturamento)
+app.get("/api/top-produtos", async (req, res) => {
+  try {
+    const period = ensurePeriod(req, res);
+    if (!period) return;
+
+    const limit = Number(req.query.limit || 10);
+    const { tag } = req.query;
+    const hasTag = !!tag;
+
+    const sql = `
+      SELECT
+        produto,
+        ${hasTag ? "$3::text AS tag," : "NULL::text AS tag,"}
+        SUM(quantidade)  AS total_unidades,
+        SUM(valor_total) AS total_faturado
+      FROM analytics.vw_tiny_sales_enriched
+      WHERE data >= $1
+        AND data <  $2 + INTERVAL '1 day'
+        ${hasTag ? "AND tags ILIKE '%' || $3 || '%'" : ""}
+      GROUP BY produto
+      ORDER BY total_faturado DESC
+      LIMIT ${limit}
+    `;
+
+    const params = hasTag
+      ? [period.start, period.end, tag]
+      : [period.start, period.end];
+
+    const result = await db.query(sql, params);
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("Erro em /api/top-produtos:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
+
+// Vendas por mês (para gráfico de coluna)
+app.get("/api/vendas-por-mes", async (req, res) => {
+  try {
+    const period = ensurePeriod(req, res);
+    if (!period) return;
+
+    const { tag } = req.query;
+    const hasTag = !!tag;
+
+    const sql = `
+      SELECT
+        date_trunc('month', data)::date AS mes,
+        ${hasTag ? "$3::text AS tag," : "NULL::text AS tag,"}
+        SUM(quantidade)  AS total_unidades,
+        SUM(valor_total) AS total_faturado
+      FROM analytics.vw_tiny_sales_enriched
+      WHERE data >= $1
+        AND data <  $2 + INTERVAL '1 day'
+        ${hasTag ? "AND tags ILIKE '%' || $3 || '%'" : ""}
+      GROUP BY mes
+      ORDER BY mes
+    `;
+
+    const params = hasTag
+      ? [period.start, period.end, tag]
+      : [period.start, period.end];
+
+    const result = await db.query(sql, params);
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("Erro em /api/vendas-por-mes:", err);
+    return res.status(500).json({ error: "internal_error" });
+  }
+});
 
 
 // 9) START SERVER

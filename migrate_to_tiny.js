@@ -1,17 +1,24 @@
 // migrate_to_tiny.js — versão corrigida, mapeando colunas reais
 require('dotenv').config();
-const { Client } = require('pg');
+const { Client } = require("pg");
 
 (async () => {
   const c = new Client({
-    host: process.env.PGHOST,
-    port: +process.env.PGPORT || 5432,
-    database: process.env.PGDATABASE,
-    user: process.env.PGUSER,
+    host: process.env.PGHOST || "localhost",
+    port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
+    database: process.env.PGDATABASE || "iah_plumas",
+    user: process.env.PGUSER || "postgres",
     password: process.env.PGPASSWORD,
+    ssl: {
+      rejectUnauthorized: false, // 🔥 igual no ingest_orders_v2, necessário pro Postgres do Render
+    },
   });
+
   await c.connect();
-  console.log("🔄 Iniciando migração de orders → tiny_orders e order_items → tiny_order_items");
+  console.log(
+    "🔄 Iniciando migração de orders → tiny_orders e order_items → tiny_order_items"
+  );
+
 
   // Mover pedidos (orders)
   const migOrders = `

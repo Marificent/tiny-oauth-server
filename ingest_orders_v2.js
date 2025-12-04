@@ -25,11 +25,15 @@ const pool = new Pool({
   user: process.env.PGUSER || "postgres",
   password: process.env.PGPASSWORD,
   database: process.env.PGDATABASE || "iah_plumas",
+  ssl: {
+    rejectUnauthorized: false, // 🔥 obrigatório pro Postgres do Render
+  },
 });
 
-// ===== JANELA DE BUSCA =====
-// Ajuste quantos dias atrás quer carregar
-const DIAS_RETRO = 90;
+
+// ===== INTERVALO DE BUSCA =====
+// Data fixa de início (01/01/2020) e final = hoje
+const DATA_INICIAL_FIXA = new Date("2020-01-01T00:00:00-03:00");
 
 // ===== RATE LIMIT =====
 const SLEEP_BETWEEN_DETAIL_MS = 500; // pausa entre detalhes
@@ -247,17 +251,57 @@ function mapItensFromDetalhe(det) {
     await client.query(ensureTablesSQL);
 
     const hoje = new Date();
-    const inicio = new Date();
-    inicio.setDate(hoje.getDate() - DIAS_RETRO);
 
-    const dataInicial = formatDateBR(inicio);
-    const dataFinal = formatDateBR(hoje);
+    // ===== Descobre última data já salva no banco (para ficar incremental) =====
+    console.log("🔎 Verificando última data de pedido já gravada no banco...");
+    const { rows } = await client.query(
+      "SELECT MAX(data_pedido) AS max_data FROM public.orders"
+    );
 
-    console.log(`📅 Buscando pedidos de ${dataInicial} a ${dataFinal} ...`);
+    let inicio;
 
-    let pagina = 1;
-    let totalPaginas = 1;
-    let totalUpserts = 0;
+      if (!rows[0] || !rows[0].max_data) {
+      // Banco vazio: começa na data fixa (01/01/2020)
+      inicio = DATA_INICIAL_FIXA;
+      console.log(
+        `📂 Nenhum pedido encontrado em public.orders. Usando data inicial fixa ${formatDateBR(
+      inicio
+     )}.`
+  );
+} else {
+  const ultimaData = new Date(rows[0].max_data);
+  const proximoDia = new Date(ultimaData);
+  proximoDia.setDate(ultimaData.getDate() + 1);
+  inicio = proximoDia;
+
+  console.log(
+    `📂 Último pedido no banco em: ${formatDateBR(
+      ultimaData
+    )}. Buscando a partir de ${formatDateBR(inicio)}.`
+  );
+}
+
+// Se por algum motivo a data inicial calculada for maior que hoje, não faz nada
+if (inicio > hoje) {
+  console.log(
+    `✅ Não há novos dias para buscar. Última data (${formatDateBR(
+      inicio
+    )}) já é maior que hoje (${formatDateBR(hoje)}).`
+  );
+  client.release();
+  await pool.end();
+  return;
+}
+
+const dataInicial = formatDateBR(inicio);
+const dataFinal = formatDateBR(hoje);
+
+console.log(`📅 Buscando pedidos de ${dataInicial} a ${dataFinal} ...`);
+
+let totalPaginas = 1;
+let totalUpserts = 0;
+let pagina = 1;
+
 
     do {
       const pesquisa = await tinyGet("/api2/pedidos.pesquisa.php", {

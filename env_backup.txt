@@ -1,0 +1,12 @@
+TINY_CLIENT_ID=tiny-api-56b389aad698118b726a09c113a0d1ecf6d492f3-1759932486
+TINY_CLIENT_SECRET=WrNzCS5xQrvpKEQ7aYTjPgpM13gsN0CJ
+TINY_REDIRECT_URI=http://localhost:3000/auth/callback
+AUTH_URL=https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/auth
+TOKEN_URL=https://accounts.tiny.com.br/realms/tiny/protocol/openid-connect/token
+
+TINY_ACCESS_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJnWXk2cDhkQkU0dDBkZkFvU0J4WkJvbDBkYmpTcEF5Z3FpQm1vY3pMcXJVIn0...
+TINY_REFRESH_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICI5MDNkY2IxNi0xNTgwLTQ0NzYtYWY0Mi1lYTFkN2YyNzY4MjcifQ...
+
+# App
+NODE_ENV=development
+PORT=3000

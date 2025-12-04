@@ -1,5 +1,62 @@
-node_modules
+# ===============================
+#  IGNORAR ARQUIVOS SENSÍVEIS
+# ===============================
+
+# Arquivos de credenciais
 .env
+*.env
+
+# Backups de banco
+*.dump
+*.sql
+combo_db.zip
+
+# ===============================
+#  IGNORAR ARQUIVOS PESADOS
+# ===============================
+
+# Relatórios, arquivos zipados, etc
+*.zip
+*.rar
+*.7z
+
+# Downloads acidentais
+*.tar
+*.tar.gz
+
+# ===============================
+#  IGNORAR DIRETÓRIOS
+# ===============================
+
+# Biblioteca local Node
+node_modules/
+
+# Arquivos gerados por build (se houver futuramente)
+dist/
+build/
+
+# Cache do npm
+.npm/
+
+# Logs gerais
 logs/
 *.log
-env_backup.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache local
+.cache/
+
+# ======= IGNORAR ARQUIVOS QUE NÃO DEVEM IR PARA O GIT =======
+
+public/
+tmp/
+temp/
+__pycache__/
+.DS_Store
+
+# Evitar enviar arquivos gerados localmente
+*.bak
+*.old
+*.orig

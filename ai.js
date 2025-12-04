@@ -20,11 +20,12 @@ async function explainTinyData(question, payload) {
       - analise sazonalidade,
       - destaque padrões importantes.
     `,
-    input: [
-      `Pergunta do usuário: ${question}`,
-      "A seguir estão os dados que foram obtidos do Tiny:",
-      JSON.stringify(payload).slice(0, 12000)
-    ]
+    input: `
+      Pergunta do usuário: ${question}
+
+      A seguir estão os dados que foram obtidos do Tiny (JSON truncado):
+      ${JSON.stringify(payload).slice(0, 12000)}
+    `,
   });
 
   return response.output_text; 

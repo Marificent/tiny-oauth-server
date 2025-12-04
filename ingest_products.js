@@ -9,8 +9,16 @@ const {
 } = process.env;
 
 const db = new Client({
-  host: PGHOST, port: PGPORT, user: PGUSER, password: PGPASSWORD, database: PGDATABASE,
+  host: PGHOST,
+  port: PGPORT,
+  user: PGUSER,
+  password: PGPASSWORD,
+  database: PGDATABASE,
+  ssl: {
+    rejectUnauthorized: false, // 🔥 obrigatório pro Postgres do Render
+  },
 });
+
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
