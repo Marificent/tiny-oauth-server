@@ -138,27 +138,63 @@ app.post("/token", (req, res) => {
 app.post("/api/chat-tiny", async (req, res) => {
   try {
     const { question } = req.body;
+    const q = String(question || "").trim();
+    const qlc = q.toLowerCase();
+
+// “small talk” = não roda SQL, resposta curtinha
+const isSmallTalk =
+  qlc.length <= 40 ||
+  /^(oi|olá|ola|teste|testando|ping|funciona|você funciona|vc funciona)\b/.test(qlc);
+
+// só roda SQL quando o usuário pedir claramente
+const wantsAnalysis =
+  /(analise|análise|relatório|resumo|insights|tendência|tendencias|vendas|faturamento|por categoria|por produto|top|ranking)/.test(qlc);
+
+const shouldUseData = !isSmallTalk && wantsAnalysis;
+
+// modo de resposta curta (economiza tokens)
+const conciseMode = isSmallTalk || !wantsAnalysis;
+
 
     if (!question) {
       return res.status(400).json({ error: "missing_question" });
     }
 
     // 1) Interpretar pergunta → gerar SQL
-    const { sql, params } = buildQueryFromQuestion(question);
+    let sql = null;
+    let params = [];
+    let rows = [];
 
-    // 2) Executar no Postgres REAL
-    const result = await db.query(sql, params);
-    const rows = result.rows || [];
+if (shouldUseData) {
+  // 1) Interpretar pergunta → gerar SQL
+  const built = buildQueryFromQuestion(q);
+  sql = built.sql;
+  params = built.params || [];
 
-    // 3) GPT explica os dados
-    const answer = await explainTinyData(question, rows);
+  // 2) Executar no Postgres REAL
+  const result = await db.query(sql, params);
+  rows = result.rows || [];
+}
 
-    return res.json({
-      question,
-      sql,
-      data: rows.slice(0, 300),
-      answer
-    });
+const LIMIT_ROWS_AI = 10;
+
+// se for modo curto, não manda dados nenhum pro GPT
+const limitedRows = conciseMode ? [] : rows.slice(0, LIMIT_ROWS_AI);
+
+const questionForAI = conciseMode
+  ? `Responda em 1 a 3 frases, direto ao ponto: ${q}`
+  : q;
+
+const answer = await explainTinyData(questionForAI, limitedRows);
+
+return res.json({
+  question: q,
+  sql,
+  data: limitedRows,
+  answer
+});
+
+
 
   } catch (err) {
     console.error("Erro no /api/chat-tiny:", err);
