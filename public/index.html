@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GPTzão Tiny – Console de Análises</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Tailwind via CDN (pra ficar bonito sem complicar build) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-6 flex flex-col gap-4">
+      <!-- Header -->
+      <header class="flex items-center justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-50">
+            GPTzão Tiny – Console
+          </h1>
+          <p class="text-sm text-slate-400">
+            Faça perguntas em linguagem natural sobre suas vendas no Tiny.
+          </p>
+        </div>
+        <div
+          class="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30"
+        >
+          🔗 Conectado ao Tiny / Postgres
+        </div>
+      </header>
+
+      <!-- Tabs -->
+      <nav
+        class="flex border-b border-slate-800 text-sm font-medium gap-4 overflow-x-auto"
+      >
+        <button
+          id="tab-chat"
+          class="py-2 px-3 border-b-2 border-emerald-500 text-emerald-300"
+        >
+          💬 GPTzão (Chat)
+        </button>
+        <button
+          id="tab-relatorios"
+          class="py-2 px-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200"
+        >
+          📊 Relatórios & Filtros
+        </button>
+      </nav>
+
+      <!-- Conteúdo das abas -->
+      <main class="flex-1">
+        <!-- ABA CHAT -->
+        <section id="tab-chat-content" class="flex flex-col gap-4">
+          <!-- Formulário -->
+          <form
+            id="chat-form"
+            class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3"
+          >
+            <label class="text-sm font-medium text-slate-200">
+              Pergunta para o GPTzão
+            </label>
+            <textarea
+              id="question-input"
+              rows="3"
+              class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 placeholder-slate-500"
+              placeholder="Ex: qual a quantidade de vendas de produtos dentro da tag pluma chorona no período de setembro a novembro de 2023?"
+            ></textarea>
+
+            <div class="flex items-center justify-between gap-4">
+              <div
+                id="chat-status"
+                class="text-xs text-slate-400 h-4 flex items-center"
+              >
+                <!-- status / erros aparecem aqui -->
+              </div>
+              <button
+                type="submit"
+                id="chat-submit"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <span>Enviar pergunta</span>
+                <span id="chat-loading-spinner" class="hidden animate-spin">
+                  ⏳
+                </span>
+              </button>
+            </div>
+          </form>
+
+          <!-- Resposta -->
+          <section class="grid md:grid-cols-3 gap-4 items-start">
+            <!-- Resposta em linguagem natural -->
+            <div
+              class="md:col-span-2 bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2"
+            >
+              <h2 class="text-sm font-semibold text-slate-200">
+                Resposta do GPTzão
+              </h2>
+              <div
+                id="answer-output"
+                class="text-sm text-slate-200 whitespace-pre-wrap min-h-[4rem]"
+              >
+                Faça uma pergunta para ver a análise aqui. ✨
+              </div>
+            </div>
+
+            <!-- Debug / SQL -->
+            <div
+              class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2 text-xs"
+            >
+              <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+                SQL gerado & dados
+                <span
+                  class="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] text-slate-400"
+                  >debug</span
+                >
+              </h2>
+
+              <details
+                class="bg-slate-950/60 border border-slate-800 rounded-xl p-2"
+                open
+              >
+                <summary class="cursor-pointer text-slate-300 mb-1">
+                  SQL gerado
+                </summary>
+                <pre
+                  id="sql-output"
+                  class="text-[11px] text-emerald-200 whitespace-pre-wrap"
+                >
+Nenhuma consulta executada ainda.</pre
+                >
+              </details>
+
+              <details
+                class="bg-slate-950/60 border border-slate-800 rounded-xl p-2"
+              >
+                <summary class="cursor-pointer text-slate-300 mb-1">
+                  Amostra dos dados retornados
+                </summary>
+                <pre
+                  id="data-output"
+                  class="text-[11px] text-slate-300 whitespace-pre-wrap max-h-48 overflow-auto"
+                >
+[]</pre
+                >
+              </details>
+            </div>
+          </section>
+        </section>
+
+        <!-- ABA RELATÓRIOS (dashboard com filtros no topo) -->
+<section id="tab-relatorios-content" class="hidden flex flex-col gap-4">
+  <!-- Filtros -->
+  <form
+    id="relatorios-form"
+    class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-4"
+  >
+    <div class="flex flex-wrap gap-4 items-end">
+      <div class="flex flex-col gap-1">
+        <label
+          for="rel-tag"
+          class="text-xs font-medium text-slate-300 uppercase tracking-wide"
+          >Tag</label
+        >
+        <select
+          id="rel-tag"
+          class="min-w-[180px] bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-100"
+        >
+          <option value="">(todas as tags)</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label
+          for="rel-start"
+          class="text-xs font-medium text-slate-300 uppercase tracking-wide"
+          >De</label
+        >
+        <input
+          type="date"
+          id="rel-start"
+          class="bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-100"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label
+          for="rel-end"
+          class="text-xs font-medium text-slate-300 uppercase tracking-wide"
+          >Até</label
+        >
+        <input
+          type="date"
+          id="rel-end"
+          class="bg-slate-950/80 border border-slate-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-100"
+        />
+      </div>
+
+      <button
+        type="submit"
+        id="rel-submit"
+        class="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        Atualizar painel
+      </button>
+    </div>
+
+    <p id="rel-status" class="text-xs text-slate-400">
+      Selecione um período e, opcionalmente, uma tag para analisar as vendas.
+    </p>
+  </form>
+
+  <!-- Cards de resumo -->
+  <section class="grid md:grid-cols-4 gap-4">
+    <div
+      class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-1"
+    >
+      <span class="text-xs text-slate-400 uppercase tracking-wide"
+        >Faturamento</span
+      >
+      <span
+        id="card-faturamento"
+        class="text-xl font-semibold text-emerald-300"
+        >R$ 0,00</span
+      >
+      <span class="text-[11px] text-slate-500"
+        >Somatório do valor total das vendas no período.</span
+      >
+    </div>
+
+    <div
+      class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-1"
+    >
+      <span class="text-xs text-slate-400 uppercase tracking-wide"
+        >Unidades vendidas</span
+      >
+      <span
+        id="card-unidades"
+        class="text-xl font-semibold text-emerald-300"
+        >0</span
+      >
+      <span class="text-[11px] text-slate-500"
+        >Total de unidades vendidas no período.</span
+      >
+    </div>
+
+    <div
+      class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-1"
+    >
+      <span class="text-xs text-slate-400 uppercase tracking-wide"
+        >Produtos distintos</span
+      >
+      <span
+        id="card-produtos"
+        class="text-xl font-semibold text-emerald-300"
+        >0</span
+      >
+      <span class="text-[11px] text-slate-500"
+        >Quantidade de SKUs diferentes com venda.</span
+      >
+    </div>
+
+    <div
+      class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-1"
+    >
+      <span class="text-xs text-slate-400 uppercase tracking-wide"
+        >Ticket médio por unidade</span
+      >
+      <span
+        id="card-ticket"
+        class="text-xl font-semibold text-emerald-300"
+        >R$ 0,00</span
+      >
+      <span class="text-[11px] text-slate-500"
+        >Faturamento dividido pelas unidades.</span
+      >
+    </div>
+  </section>
+
+  <!-- Gráfico + Tabela -->
+  <section class="grid md:grid-cols-2 gap-4 items-start">
+    <!-- Gráfico por mês -->
+    <div
+      class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3"
+    >
+      <h3 class="text-sm font-semibold text-slate-200">
+        Faturamento por mês
+      </h3>
+      <div
+        id="chart-vendas-mes"
+        class="space-y-2 max-h-[320px] overflow-auto pr-1"
+      >
+        <p class="text-xs text-slate-400">
+          O gráfico aparecerá aqui após carregar os dados.
+        </p>
+      </div>
+    </div>
+
+    <!-- Top produtos -->
+    <div
+      class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3"
+    >
+      <h3 class="text-sm font-semibold text-slate-200">
+        Top produtos por faturamento
+      </h3>
+      <div class="overflow-auto max-h-[320px]">
+        <table class="w-full text-xs border-collapse">
+          <thead class="text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="text-left py-1 pr-2">#</th>
+              <th class="text-left py-1 pr-2">Produto</th>
+              <th class="text-right py-1 pr-2">Unidades</th>
+              <th class="text-right py-1 pr-2">Faturamento</th>
+            </tr>
+          </thead>
+          <tbody id="top-produtos-body" class="text-slate-200">
+            <tr>
+              <td colspan="4" class="py-2 text-center text-slate-400">
+                Nenhum dado carregado ainda.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</section>
+      </main>
+    </div>
+
+        <!-- Script da página -->
+    <script>
+      // ---- Controle das abas ----
+      const tabChatBtn = document.getElementById("tab-chat");
+      const tabRelBtn = document.getElementById("tab-relatorios");
+      const tabChatContent = document.getElementById("tab-chat-content");
+      const tabRelContent = document.getElementById("tab-relatorios-content");
+
+      function activateTab(tab) {
+        if (tab === "chat") {
+          tabChatBtn.classList.add("border-emerald-500", "text-emerald-300");
+          tabChatBtn.classList.remove("border-transparent", "text-slate-400");
+
+          tabRelBtn.classList.remove("border-emerald-500", "text-emerald-300");
+          tabRelBtn.classList.add("border-transparent", "text-slate-400");
+
+          tabChatContent.classList.remove("hidden");
+          tabRelContent.classList.add("hidden");
+        } else {
+          tabRelBtn.classList.add("border-emerald-500", "text-emerald-300");
+          tabRelBtn.classList.remove("border-transparent", "text-slate-400");
+
+          tabChatBtn.classList.remove("border-emerald-500", "text-emerald-300");
+          tabChatBtn.classList.add("border-transparent", "text-slate-400");
+
+          tabRelContent.classList.remove("hidden");
+          tabChatContent.classList.add("hidden");
+        }
+      }
+
+      tabChatBtn.addEventListener("click", () => activateTab("chat"));
+      tabRelBtn.addEventListener("click", () => activateTab("rel"));
+
+      // ---- Lógica do chat ----
+      const chatForm = document.getElementById("chat-form");
+      const questionInput = document.getElementById("question-input");
+      const chatStatus = document.getElementById("chat-status");
+      const chatSubmit = document.getElementById("chat-submit");
+      const chatSpinner = document.getElementById("chat-loading-spinner");
+
+      const answerOutput = document.getElementById("answer-output");
+      const sqlOutput = document.getElementById("sql-output");
+      const dataOutput = document.getElementById("data-output");
+
+      function setLoading(isLoading, message) {
+        if (isLoading) {
+          chatSubmit.disabled = true;
+          chatSpinner.classList.remove("hidden");
+          chatStatus.textContent =
+            message || "Processando sua pergunta com o GPTzão...";
+        } else {
+          chatSubmit.disabled = false;
+          chatSpinner.classList.add("hidden");
+          chatStatus.textContent = message || "";
+        }
+      }
+
+      chatForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const question = questionInput.value.trim();
+
+        if (!question) {
+          chatStatus.textContent =
+            "Por favor, escreva uma pergunta antes de enviar.";
+          return;
+        }
+
+        try {
+          setLoading(true);
+
+          const resp = await fetch("/api/chat-tiny", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ question }),
+          });
+
+          const text = await resp.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (parseErr) {
+            console.error("Erro ao parsear JSON:", text);
+            throw new Error("Resposta inválida do servidor.");
+          }
+
+          if (!resp.ok || data.error) {
+            console.error("Erro na API:", data);
+            setLoading(false, "Erro ao processar a pergunta.");
+            answerOutput.textContent =
+              "Ocorreu um erro ao processar sua pergunta. Tente novamente mais tarde.";
+            sqlOutput.textContent = data.sql || "—";
+            dataOutput.textContent = JSON.stringify(data, null, 2);
+            return;
+          }
+
+          // Esperando o formato: { question, sql, data, answer }
+          answerOutput.textContent =
+            data.answer ||
+            "Pergunta processada, mas não houve resposta de análise.";
+          sqlOutput.textContent = data.sql || "—";
+          dataOutput.textContent = JSON.stringify(data.data || [], null, 2);
+
+          setLoading(false, "Pronto!");
+        } catch (err) {
+          console.error(err);
+          setLoading(
+            false,
+            "Erro de conexão com o servidor. Verifique se o backend está rodando."
+          );
+          answerOutput.textContent =
+            "Não foi possível falar com o servidor agora.";
+        }
+      });
+
+      // ---- LÓGICA DA ABA DE RELATÓRIOS ----
+
+      const relForm = document.getElementById("relatorios-form");
+      const relTag = document.getElementById("rel-tag");
+      const relStart = document.getElementById("rel-start");
+      const relEnd = document.getElementById("rel-end");
+      const relSubmit = document.getElementById("rel-submit");
+      const relStatus = document.getElementById("rel-status");
+
+      const cardFaturamento = document.getElementById("card-faturamento");
+      const cardUnidades = document.getElementById("card-unidades");
+      const cardProdutos = document.getElementById("card-produtos");
+      const cardTicket = document.getElementById("card-ticket");
+
+      const chartVendasMes = document.getElementById("chart-vendas-mes");
+      const topProdutosBody = document.getElementById("top-produtos-body");
+
+      function formatoBRValor(valor) {
+        if (valor == null) return "R$ 0,00";
+        return valor.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        });
+      }
+
+      function formatoBRNumero(valor) {
+        if (valor == null) return "0";
+        return valor.toLocaleString("pt-BR");
+      }
+
+      function setRelLoading(isLoading, msg) {
+        if (isLoading) {
+          relSubmit.disabled = true;
+          relStatus.textContent =
+            msg || "Carregando dados do período selecionado...";
+        } else {
+          relSubmit.disabled = false;
+          relStatus.textContent = msg || "";
+        }
+      }
+
+      async function carregarTags() {
+        try {
+          const resp = await fetch("/api/tags");
+          const tags = await resp.json();
+          relTag.innerHTML =
+            '<option value="">(todas as tags)</option>' +
+            tags
+              .map(
+                (t) =>
+                  `<option value="${t.replace(/"/g, "&quot;")}">${t}</option>`
+              )
+              .join("");
+        } catch (err) {
+          console.error("Erro ao carregar tags:", err);
+        }
+      }
+
+      function setPeriodoPadrao() {
+        const hoje = new Date();
+        const fim = hoje.toISOString().slice(0, 10);
+        const inicio = new Date();
+        inicio.setMonth(inicio.getMonth() - 2); // últimos 3 meses
+        const inicioStr = inicio.toISOString().slice(0, 10);
+        relStart.value = inicioStr;
+        relEnd.value = fim;
+      }
+
+      async function carregarRelatorios() {
+        const start = relStart.value;
+        const end = relEnd.value;
+        const tag = relTag.value;
+
+        if (!start || !end) {
+          setRelLoading(false, "Defina o período antes de atualizar.");
+          return;
+        }
+
+        setRelLoading(true);
+
+        const qs =
+          `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` +
+          (tag ? `&tag=${encodeURIComponent(tag)}` : "");
+
+        try {
+          const [resumoResp, topResp, mesResp] = await Promise.all([
+            fetch(`/api/resumo-periodo${qs}`),
+            fetch(`/api/top-produtos${qs}`),
+            fetch(`/api/vendas-por-mes${qs}`),
+          ]);
+
+          const resumo = await resumoResp.json();
+          const top = await topResp.json();
+          const porMes = await mesResp.json();
+
+          if (resumo && resumo.total_faturado != null) {
+            cardFaturamento.textContent = formatoBRValor(
+              Number(resumo.total_faturado)
+            );
+            cardUnidades.textContent = formatoBRNumero(
+              Number(resumo.total_unidades)
+            );
+            cardProdutos.textContent = formatoBRNumero(
+              Number(resumo.produtos_distintos)
+            );
+            cardTicket.textContent = formatoBRValor(
+              Number(resumo.ticket_medio_por_unidade)
+            );
+            setRelLoading(
+              false,
+              `Período de ${resumo.data_inicial} até ${resumo.data_final}${
+                resumo.tag ? ` | Tag: ${resumo.tag}` : ""
+              }.`
+            );
+          } else {
+            cardFaturamento.textContent = "R$ 0,00";
+            cardUnidades.textContent = "0";
+            cardProdutos.textContent = "0";
+            cardTicket.textContent = "R$ 0,00";
+            setRelLoading(
+              false,
+              "Nenhum dado encontrado para o período/tag selecionados."
+            );
+          }
+
+          if (Array.isArray(top) && top.length > 0) {
+            topProdutosBody.innerHTML = top
+              .map(
+                (row, idx) => `
+              <tr class="border-b border-slate-800/60">
+                <td class="py-1 pr-2 text-slate-500">${idx + 1}</td>
+                <td class="py-1 pr-2">${row.produto}</td>
+                <td class="py-1 pr-2 text-right">${formatoBRNumero(
+                  Number(row.total_unidades)
+                )}</td>
+                <td class="py-1 pr-2 text-right">${formatoBRValor(
+                  Number(row.total_faturado)
+                )}</td>
+              </tr>
+            `
+              )
+              .join("");
+          } else {
+            topProdutosBody.innerHTML = `
+              <tr>
+                <td colspan="4" class="py-2 text-center text-slate-400">
+                  Nenhum produto encontrado para o período/tag selecionados.
+                </td>
+              </tr>
+            `;
+          }
+
+          if (Array.isArray(porMes) && porMes.length > 0) {
+            const maxFat = Math.max(
+              ...porMes.map((r) => Number(r.total_faturado) || 0)
+            );
+            chartVendasMes.innerHTML = porMes
+              .map((row) => {
+                const valor = Number(row.total_faturado) || 0;
+                const largura =
+                  maxFat > 0 ? Math.max(5, (valor / maxFat) * 100) : 0;
+                const mesLabel = new Date(row.mes)
+                  .toISOString()
+                  .slice(0, 7); // YYYY-MM
+                return `
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] text-slate-400 w-16">${mesLabel}</span>
+                  <div class="flex-1 bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div class="h-2 rounded-full bg-emerald-500" style="width:${largura}%"></div>
+                  </div>
+                  <span class="text-[11px] text-slate-300 w-24 text-right">${formatoBRValor(
+                    valor
+                  )}</span>
+                </div>
+              `;
+              })
+              .join("");
+          } else {
+            chartVendasMes.innerHTML = `
+              <p class="text-xs text-slate-400">
+                Nenhum dado para o período/tag selecionados.
+              </p>
+            `;
+          }
+        } catch (err) {
+          console.error("Erro ao carregar relatórios:", err);
+          setRelLoading(
+            false,
+            "Erro ao carregar relatórios. Verifique a conexão com o servidor."
+          );
+        }
+      }
+
+      // Inicialização da aba de relatórios
+      (async function initRelatorios() {
+        setPeriodoPadrao();
+        await carregarTags();
+        await carregarRelatorios();
+      })();
+
+      // Submit do formulário de filtros
+      relForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await carregarRelatorios();
+      });
+    </script>
+  </body>
+</html>
