@@ -203,11 +203,15 @@ const LIMIT_ROWS_AI = 10;
 // se for modo curto, não manda dados nenhum pro GPT
 const limitedRows = conciseMode ? [] : rows.slice(0, LIMIT_ROWS_AI);
 
-const questionForAI = conciseMode
-  ? `Responda em 1 a 3 frases, direto ao ponto: ${q}`
-  : q;
+let answer;
 
-const answer = await explainTinyData(questionForAI, limitedRows);
+if (conciseMode) {
+  // resposta fixa para small talk / teste (não usa OpenAI)
+  answer = "✅ Sim! Estou funcionando normalmente e pronto para analisar suas vendas no Tiny.";
+} else {
+  // só aqui chama o GPT
+  answer = await explainTinyData(q, limitedRows);
+}
 
 return res.json({
   question: q,
