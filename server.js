@@ -170,9 +170,12 @@ const isSmallTalk =
 
 // só roda SQL quando o usuário pedir claramente
 const wantsAnalysis =
-  /(analise|análise|relatório|resumo|insights|tendência|tendencias|vendas|faturamento|por categoria|por produto|top|ranking)/.test(qlc);
+  /(analise|análise|relatório|resumo|insights|tendência|tendencias|vendas|faturamento|receita|lucro|margem|ticket|categoria|produto|top|ranking|compar(ar|ação|acao)|vale mais a pena|melhor|pior|vs|versus)/.test(qlc);
 
-const shouldUseData = !isSmallTalk && wantsAnalysis;
+const looksComparative =
+  qlc.includes(" ou ") || qlc.includes(" vs ") || qlc.includes("versus") || qlc.includes("vale mais a pena");
+
+const shouldUseData = !isSmallTalk && (wantsAnalysis || looksComparative);
 
 // modo de resposta curta (economiza tokens)
 const conciseMode = isSmallTalk || !wantsAnalysis;
