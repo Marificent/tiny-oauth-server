@@ -47,8 +47,26 @@ function wantsAggregation(question) {
   );
 }
 
+// ✅ NOVO: detectar pedido de lista de categorias/tags
+function wantsCategoriesList(question) {
+  // pega: "lista de categorias", "listar categorias", "listagem de tags", "quais categorias", etc.
+  return /(lista(?:r)?|listagem|quais|mostrar)\s+(categoria(?:s)?|tag(?:s)?)/.test(question);
+}
+
 function buildQueryFromQuestion(question) {
-  const q = question.toLowerCase();
+  const q = String(question || "").toLowerCase();
+
+  // ✅ NOVO: se pediu lista de categorias, retorna SQL específico
+  if (wantsCategoriesList(q)) {
+    const sql = `
+      SELECT DISTINCT tags
+      FROM analytics.vw_tiny_sales_enriched
+      WHERE tags IS NOT NULL
+      ORDER BY tags
+      LIMIT 200
+    `;
+    return { sql, params: [] };
+  }
 
   const year = extractYear(q);
   const month = extractMonth(q);
