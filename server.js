@@ -165,7 +165,8 @@ app.post("/api/chat-tiny", async (req, res) => {
 
 // ✅ comando: listar categorias/tags (não usa OpenAI)
 const wantsCategoriesList =
-  /(lista(?:r)?|listagem|quais|mostrar)\s+(categoria(?:s)?|tag(?:s)?)/.test(qlc);
+  /(lista(?:r)?|listagem|quais|mostrar)\s+(?:de\s+)?(categoria(?:s)?|tag(?:s)?)/.test(qlc);
+
 
 if (wantsCategoriesList) {
   const sql = `
