@@ -26,7 +26,7 @@ const app = express();
 // IMPORTS DO GPTZÃO  ------------------------------
 const { buildQueryFromQuestion } = require("./queryBuilder");
 const { explainTinyData } = require("./ai");
-const db = require("./db");
+const pool = require("./db");
 // ------------------------------------------------
 
 
@@ -163,6 +163,33 @@ app.post("/api/chat-tiny", async (req, res) => {
     const q = String(question || "").trim();
     const qlc = q.toLowerCase();
 
+// ✅ comando: listar categorias/tags (não usa OpenAI)
+const wantsCategoriesList =
+  /(lista(?:r)?|listagem|quais|mostrar)\s+(categoria(?:s)?|tag(?:s)?)/.test(qlc);
+
+if (wantsCategoriesList) {
+  const sql = `
+    SELECT DISTINCT tags
+    FROM analytics.vw_tiny_sales_enriched
+    WHERE tags IS NOT NULL
+    ORDER BY tags
+    LIMIT 200
+  `;
+
+  const { rows } = await pool.query(sql);
+
+  // para a UI ficar bonita: devolve como array simples de strings
+  const categories = rows.map(r => r.tags).filter(Boolean);
+
+  return res.json({
+    question: q,
+    sql,
+    data: categories,     // <- aparece na “Amostra dos dados”
+    answer: `✅ Encontrei ${categories.length} categorias. Veja a lista na amostra ao lado.`
+  });
+}
+
+
 // “small talk” = não roda SQL, resposta curtinha
 const isSmallTalk =
   qlc.length <= 40 ||
@@ -171,10 +198,6 @@ const isSmallTalk =
 // só roda SQL quando o usuário pedir claramente
 const wantsAnalysis =
   /(analise|análise|relatório|resumo|insights|tendência|tendencias|vendas|faturamento|receita|lucro|margem|ticket|lista(?:gem)?|categoria(?:s)?|tag(?:s)?|produto|top|ranking|compar(ar|ação|acao)|vale mais a pena|melhor|pior|vs|versus)/.test(qlc);
-
-
-const wantsCategoriesList =
-  /(lista(?:r)?|listagem|quais|mostrar)\s+(categoria(?:s)?|tag(?:s)?)/.test(qlc);
 
 const looksComparative =
   qlc.includes(" ou ") || qlc.includes(" vs ") || qlc.includes("versus") || qlc.includes("vale mais a pena");
